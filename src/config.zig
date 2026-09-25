@@ -9,7 +9,6 @@ const writers = @import("writer/mod.zig");
 
 const Value = @import("value.zig").Value;
 const OwnedValue = @import("value.zig").OwnedValue;
-const valueToString = @import("value.zig").valueToString;
 const ConfigError = @import("errors.zig").ConfigError;
 
 const parse_env = @import("parser/env.zig");
@@ -43,14 +42,28 @@ pub const Config = struct {
 
     // pub usingnamespace accessors;
     pub const get = accessors.get;
-    pub const getString = accessors.getString;
     pub const getAs = accessors.getAs;
+    pub const getString = accessors.getString;
+    pub const getSection = accessors.getSection;
+    pub const has = accessors.has;
     pub const keys = accessors.keys;
     // pub usingnamespace merge;
     pub const merge = merges.merge;
     // pub usingnamespace values;
+    pub const OwnedValue = values.OwnedValue;
+    pub const valueToType = values.valueToType;
+    pub const valueToString = values.valueToString;
     pub const Table = values.Table;
     // pub usingnamespace utils;
+    pub const parseVariableEdeepCloneValuexpression = utils.parseVariableExpression;
+    pub const parseKeyValueIntoTable = utils.parseKeyValueIntoTable;
+    pub const insertEntry = utils.insertEntry;
+    pub const unescapeString = utils.unescapeString;
+    pub const escapeString = utils.escapeString;
+    pub const findUnescaped = utils.findUnescaped;
+    pub const stripQuotes = utils.stripQuotes;
+    pub const getBool = utils.getBool;
+    pub const deepCloneValue = utils.deepCloneValue;
 
     /// Creates a new empty config with the given allocator.
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -177,7 +190,7 @@ pub const Config = struct {
 
         var it = self.map.iterator();
         while (it.next()) |entry| {
-            const val_str = try valueToString(entry.value_ptr.*, self.map.allocator);
+            const val_str = try values.valueToString(entry.value_ptr.*, self.map.allocator);
             defer self.map.allocator.free(val_str);
             try env_map.put(entry.key_ptr.*, val_str);
         }

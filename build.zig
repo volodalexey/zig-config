@@ -89,7 +89,7 @@ pub fn build(b: *std.Build) void {
     all_tests.dependOn(&b.addRunArtifact(env_tests).step);
     all_tests.dependOn(&b.addRunArtifact(ini_tests).step);
     all_tests.dependOn(&b.addRunArtifact(toml_tests).step);
-    //all_tests.dependOn(&b.addRunArtifact(other_tests).step);
+    all_tests.dependOn(&b.addRunArtifact(other_tests).step);
 
     //b.installArtifact(exe);
     //const run_cmd = b.addRunArtifact(exe);
