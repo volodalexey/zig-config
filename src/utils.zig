@@ -115,8 +115,8 @@ pub fn insertEntry(
 }
 
 pub fn unescapeString(s: []const u8, allocator: std.mem.Allocator) ![]const u8 {
-    var out = std.ArrayList(u8).init(allocator);
-    errdefer out.deinit();
+    var out = std.ArrayList(u8).empty;
+    errdefer out.deinit(allocator);
 
     var i: usize = 0;
     while (i < s.len) {
@@ -125,14 +125,14 @@ pub fn unescapeString(s: []const u8, allocator: std.mem.Allocator) ![]const u8 {
             if (i >= s.len) break;
 
             switch (s[i]) {
-                'n' => try out.append('\n'),
-                'r' => try out.append('\r'),
-                't' => try out.append('\t'),
-                '\\' => try out.append('\\'),
-                '"' => try out.append('"'),
-                '\'' => try out.append('\''),
-                'b' => try out.append('\x08'),
-                'f' => try out.append('\x0C'),
+                'n' => try out.append(allocator, '\n'),
+                'r' => try out.append(allocator, '\r'),
+                't' => try out.append(allocator, '\t'),
+                '\\' => try out.append(allocator, '\\'),
+                '"' => try out.append(allocator, '"'),
+                '\'' => try out.append(allocator, '\''),
+                'b' => try out.append(allocator, '\x08'),
+                'f' => try out.append(allocator, '\x0C'),
                 'u' => {
                     if (i + 4 >= s.len)
                         return ConfigError.InvalidUnicodeEscape;
@@ -140,7 +140,7 @@ pub fn unescapeString(s: []const u8, allocator: std.mem.Allocator) ![]const u8 {
                     const cp: u21 = std.fmt.parseInt(u21, hex, 16) catch return ConfigError.InvalidUnicodeEscape;
                     var buf: [4]u8 = undefined;
                     const len: u3 = std.unicode.utf8Encode(cp, &buf) catch return ConfigError.InvalidUnicodeEscape;
-                    try out.appendSlice(buf[0..len]);
+                    try out.appendSlice(allocator, buf[0..len]);
                     i += 5;
                     continue;
                 },
@@ -151,24 +151,24 @@ pub fn unescapeString(s: []const u8, allocator: std.mem.Allocator) ![]const u8 {
                     const cp: u21 = std.fmt.parseInt(u21, hex, 16) catch return ConfigError.InvalidUnicodeEscape;
                     var buf: [4]u8 = undefined;
                     const len: u3 = std.unicode.utf8Encode(cp, &buf) catch return ConfigError.InvalidUnicodeEscape;
-                    try out.appendSlice(buf[0..len]);
+                    try out.appendSlice(allocator, buf[0..len]);
                     i += 9;
                     continue;
                 },
-                else => try out.append(s[i]),
+                else => try out.append(allocator, s[i]),
             }
         } else {
-            try out.append(s[i]);
+            try out.append(allocator, s[i]);
         }
         i += 1;
     }
 
-    return out.toOwnedSlice();
+    return out.toOwnedSlice(allocator);
 }
 
 pub fn escapeString(s: []const u8, allocator: std.mem.Allocator) ![]const u8 {
-    var out = std.ArrayList(u8).init(allocator);
-    defer out.deinit();
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(allocator);
 
     var it = std.unicode.Utf8Iterator{
         .bytes = s,
@@ -177,34 +177,34 @@ pub fn escapeString(s: []const u8, allocator: std.mem.Allocator) ![]const u8 {
 
     while (it.nextCodepoint()) |cp| {
         switch (cp) {
-            '\n' => try out.appendSlice("\\n"),
-            '\r' => try out.appendSlice("\\r"),
-            '\t' => try out.appendSlice("\\t"),
-            '\\' => try out.appendSlice("\\\\"),
-            '"' => try out.appendSlice("\\\""),
-            '\'' => try out.appendSlice("\\\'"),
-            '\x08' => try out.appendSlice("\\b"),
-            '\x0C' => try out.appendSlice("\\f"),
+            '\n' => try out.appendSlice(allocator, "\\n"),
+            '\r' => try out.appendSlice(allocator, "\\r"),
+            '\t' => try out.appendSlice(allocator, "\\t"),
+            '\\' => try out.appendSlice(allocator, "\\\\"),
+            '"' => try out.appendSlice(allocator, "\\\""),
+            '\'' => try out.appendSlice(allocator, "\\\'"),
+            '\x08' => try out.appendSlice(allocator, "\\b"),
+            '\x0C' => try out.appendSlice(allocator, "\\f"),
             else => {
                 // Handle printable characters and encode them back to UTF-8 if not escaped
                 if (cp < 0x20 or cp == 0x7F) {
-                    try out.appendSlice("\\u");
+                    try out.appendSlice(allocator, "\\u");
                     var buf: [8]u8 = undefined;
                     const raw: []u8 = try std.fmt.bufPrint(&buf, "{x}", .{cp});
                     const pad_len = 4 - raw.len;
-                    for (0..pad_len) |_| try out.append('0');
-                    try out.appendSlice(raw);
+                    for (0..pad_len) |_| try out.append(allocator, '0');
+                    try out.appendSlice(allocator, raw);
                 } else {
                     // Normal printable → encode back to utf-8
                     var buf: [4]u8 = undefined;
                     const len = try std.unicode.utf8Encode(cp, &buf);
-                    try out.appendSlice(buf[0..len]);
+                    try out.appendSlice(allocator, buf[0..len]);
                 }
             },
         }
     }
 
-    return out.toOwnedSlice();
+    return out.toOwnedSlice(allocator);
 }
 
 /// Finds the first unescaped occurrence of `needle` in `haystack`.

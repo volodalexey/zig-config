@@ -3,9 +3,8 @@ const Config = @import("config").Config;
 const ConfigError = @import("config").ConfigError;
 
 test "Parse .toml with sections, arrays, and substitutions" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const allocator = std.testing.allocator;
+    const environ = std.testing.environ;
 
     const toml_text =
         \\title = "Hello"
@@ -32,7 +31,7 @@ test "Parse .toml with sections, arrays, and substitutions" {
         \\# Variable substitution with fallback
         \\ext = "${MISSING:-default}"
     ;
-    var cfg = try Config.parseToml(toml_text, allocator);
+    var cfg = try Config.parseToml(toml_text, allocator, environ);
     defer cfg.deinit();
 
     // Top-level values
@@ -92,9 +91,10 @@ test "Parse .toml with sections, arrays, and substitutions" {
 }
 
 test "Round-trip TOML parse -> write -> parse" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    std.testing.log_level = .debug;
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    const environ = std.testing.environ;
 
     // Create a config with string values only
     var cfg = Config.init(allocator);
@@ -106,13 +106,14 @@ test "Round-trip TOML parse -> write -> parse" {
 
     // Write to a TOML file
     const out_path = "test_output.toml";
-    defer std.fs.cwd().deleteFile(out_path) catch |err| {
+    defer std.Io.Dir.cwd().deleteFile(io, out_path) catch |err| {
         std.debug.print("failed to delete file: {}\n", .{err});
     }; // clean up file (ignore error if not exist)
-    try cfg.writeTomlFile(out_path);
+
+    try cfg.writeTomlFile(out_path, allocator, io);
 
     // Read it back
-    var cfg2 = try Config.loadTomlFile(out_path, allocator);
+    var cfg2 = try Config.loadTomlFile(out_path, allocator, io, environ);
     defer cfg2.deinit();
 
     const foo_string = try cfg2.getString("foo", allocator);
@@ -128,15 +129,19 @@ test "Round-trip TOML parse -> write -> parse" {
 }
 
 test "TOML writer returns InvalidType for non-string values" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    const environ = std.testing.environ;
 
     const toml_text =
         \\x = 5
     ;
-    var cfg = try Config.parseToml(toml_text, allocator);
+    var cfg = try Config.parseToml(toml_text, allocator, environ);
     defer cfg.deinit();
     // Attempt to write .toml with an int value -> should error
-    try std.testing.expectError(ConfigError.InvalidType, cfg.writeTomlFile("out_invalid.toml"));
+    const invalid_out_path = "out_invalid.toml";
+    try std.testing.expectError(ConfigError.InvalidType, cfg.writeTomlFile(invalid_out_path, allocator, io));
+    defer std.Io.Dir.cwd().deleteFile(io, invalid_out_path) catch |err| {
+        std.debug.print("failed to delete file: {}\n", .{err});
+    }; // clean up file (ignore error if not exist)
 }

@@ -6,6 +6,8 @@ const ConfigError = @import("../errors.zig").ConfigError;
 
 const valueToString = @import("../value.zig").valueToString;
 
+const FileBufferSize = 8192;
+
 /// Writes all config entries to an `.ini`-style file.
 ///
 /// - Keys in the form `section.key` are grouped under `[section]` headers
@@ -24,10 +26,11 @@ const valueToString = @import("../value.zig").valueToString;
 /// ```
 ///
 /// The file at `path` will be overwritten if it exists.
-pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocator) !void {
-    const file = try std.fs.cwd().createFile(path, .{ .truncate = true }) catch return ConfigError.IoError;
-    defer file.close();
-    var writer = file.writer();
+pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocator, io: std.Io) !void {
+    const file = std.Io.Dir.cwd().createFile(io, path, .{ .truncate = true }) catch return ConfigError.IoError;
+    defer file.close(io);
+    var buf: [FileBufferSize]u8 = undefined;
+    var writer = file.writer(io, &buf);
 
     // Use a named struct to represent each key-value pair
     const IniEntry = struct {
@@ -40,7 +43,7 @@ pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocato
     defer {
         var it = by_section.iterator();
         while (it.next()) |entry| {
-            entry.value_ptr.*.deinit();
+            entry.value_ptr.*.deinit(allocator);
         }
         by_section.deinit();
     }
@@ -56,7 +59,7 @@ pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocato
         // Split section and subkey at the first `.` (e.g., `server.port`)
         const dot: usize = std.mem.indexOfScalar(u8, full_key, '.') orelse {
             // Keys without a section (no dot) are written immediately
-            try writer.print("{s} = {s}\n", .{ full_key, val_str });
+            try writer.interface.print("{s} = {s}\n", .{ full_key, val_str });
             continue;
         };
 
@@ -71,9 +74,9 @@ pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocato
         // Append entry under its corresponding section
         const list = try by_section.getOrPut(section);
         if (!list.found_existing) {
-            list.value_ptr.* = std.ArrayList(IniEntry).init(allocator);
+            list.value_ptr.* = std.ArrayList(IniEntry).empty;
         }
-        try list.value_ptr.*.append(entry_val);
+        try list.value_ptr.*.append(allocator, entry_val);
     }
 
     // Write grouped `[section]` headers and their keys
@@ -81,14 +84,14 @@ pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocato
     var first: bool = true;
     while (sec_it.next()) |entry| {
         if (!first) {
-            try writer.writeAll("\n") catch return ConfigError.IoError;
+            writer.interface.writeAll("\n") catch return ConfigError.IoError;
         } else {
             first = false;
         }
 
-        try writer.print("[{s}]\n", .{entry.key_ptr.*}) catch return ConfigError.IoError;
+        writer.interface.print("[{s}]\n", .{entry.key_ptr.*}) catch return ConfigError.IoError;
         for (entry.value_ptr.*.items) |pair| {
-            try writer.print("{s} = {s}\n", .{ pair.key, pair.value }) catch return ConfigError.IoError;
+            writer.interface.print("{s} = {s}\n", .{ pair.key, pair.value }) catch return ConfigError.IoError;
         }
     }
 }

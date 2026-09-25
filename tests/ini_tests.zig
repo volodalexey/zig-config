@@ -3,9 +3,8 @@ const Config = @import("config").Config;
 const ConfigError = @import("config").ConfigError;
 
 test "Parse .ini with sections and typed values" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const allocator = std.testing.allocator;
+    const environ = std.testing.environ;
 
     const ini_text =
         \\# Global settings
@@ -22,7 +21,7 @@ test "Parse .ini with sections and typed values" {
         \\size = 128
         \\path = ${debug:+/tmp/cache}
     ;
-    var cfg = try Config.parseIni(ini_text, allocator);
+    var cfg = try Config.parseIni(ini_text, allocator, environ);
     defer cfg.deinit();
 
     // Flattened keys in the config
@@ -64,9 +63,8 @@ test "Parse .ini with sections and typed values" {
 }
 
 test "Duplicate keys in .ini overwrite previous" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const allocator = std.testing.allocator;
+    const environ = std.testing.environ;
 
     const ini_text =
         \\value=first
@@ -75,7 +73,7 @@ test "Duplicate keys in .ini overwrite previous" {
         \\x=1
         \\x=2
     ;
-    var cfg = try Config.parseIni(ini_text, allocator);
+    var cfg = try Config.parseIni(ini_text, allocator, environ);
     defer cfg.deinit();
 
     // The second assignment should overwrite the first
@@ -90,10 +88,6 @@ test "Duplicate keys in .ini overwrite previous" {
 }
 
 test "Missing '=' in .ini line" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const bad_ini =
         \\NotAKeyValueLine
     ;
@@ -103,10 +97,6 @@ test "Missing '=' in .ini line" {
 }
 
 test "Empty key in .ini" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const bad_ini =
         \\=value
     ;
@@ -116,10 +106,6 @@ test "Empty key in .ini" {
 }
 
 test "Whitespace in key name in .ini" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const bad_ini =
         \\bad key = 123
     ;
@@ -129,10 +115,6 @@ test "Whitespace in key name in .ini" {
 }
 
 test "Unterminated section header in .ini" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const bad_ini =
         \\[section
     ;
@@ -142,10 +124,6 @@ test "Unterminated section header in .ini" {
 }
 
 test "Empty section name in .ini" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const bad_ini =
         \\[]
     ;
@@ -154,10 +132,6 @@ test "Empty section name in .ini" {
 }
 
 test "Variable substitution errors in .ini" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     // Unknown variable
     {
         const txt =
@@ -178,10 +152,6 @@ test "Variable substitution errors in .ini" {
 }
 
 test "Invalid escape in .ini value" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const txt =
         \\key="Invalid\\xEscape"
     ;

@@ -4,6 +4,8 @@ const ConfigError = @import("../errors.zig").ConfigError;
 const utils = @import("../utils.zig");
 const valueToString = @import("../value.zig").valueToString;
 
+const FileBufferSize = 8192;
+
 /// Writes all config entries to a `.env`-style file.
 ///
 /// - Each line is formatted as `KEY=value`, where the value is serialized to a string.

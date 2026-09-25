@@ -37,33 +37,45 @@ pub fn build(b: *std.Build) void {
     // Individual test files
     // ------------------------------
 
-    const env_tests = b.addTest(.{
+    const env_tests_mod = b.createModule(.{
         .root_source_file = b.path("tests/env_tests.zig"),
         .target = target,
         .optimize = optimize,
     });
-    env_tests.root_module.addImport("config", lib_mod);
+    env_tests_mod.addImport("config", lib_mod);
+    const env_tests = b.addTest(.{
+        .root_module = env_tests_mod,
+    });
 
-    const ini_tests = b.addTest(.{
+    const ini_tests_mod = b.createModule(.{
         .root_source_file = b.path("tests/ini_tests.zig"),
         .target = target,
         .optimize = optimize,
     });
-    ini_tests.root_module.addImport("config", lib_mod);
+    ini_tests_mod.addImport("config", lib_mod);
+    const ini_tests = b.addTest(.{
+        .root_module = ini_tests_mod,
+    });
 
-    const toml_tests = b.addTest(.{
+    const toml_tests_mod = b.createModule(.{
         .root_source_file = b.path("tests/toml_tests.zig"),
         .target = target,
         .optimize = optimize,
     });
-    toml_tests.root_module.addImport("config", lib_mod);
+    toml_tests_mod.addImport("config", lib_mod);
+    const toml_tests = b.addTest(.{
+        .root_module = toml_tests_mod,
+    });
 
-    const other_tests = b.addTest(.{
+    const other_tests_mod = b.createModule(.{
         .root_source_file = b.path("tests/other_tests.zig"),
         .target = target,
         .optimize = optimize,
     });
-    other_tests.root_module.addImport("config", lib_mod);
+    other_tests_mod.addImport("config", lib_mod);
+    const other_tests = b.addTest(.{
+        .root_module = other_tests_mod,
+    });
 
     b.step("env-tests", "Run env_tests.zig").dependOn(&b.addRunArtifact(env_tests).step);
     b.step("ini-tests", "Run ini_tests.zig").dependOn(&b.addRunArtifact(ini_tests).step);

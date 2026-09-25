@@ -3,9 +3,8 @@ const Config = @import("config").Config;
 const ConfigError = @import("config").ConfigError;
 
 test "Parse .env basic values and substitution" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const allocator = std.testing.allocator;
+    const environ = std.testing.environ;
 
     const env_text =
         \\FOO=bar
@@ -27,7 +26,7 @@ test "Parse .env basic values and substitution" {
         \\ALT4=${base2+val}
     ;
     // Parse the .env content
-    var cfg = try Config.parseEnv(env_text, allocator);
+    var cfg = try Config.parseEnv(env_text, allocator, environ);
     defer cfg.deinit();
 
     // Expect all keys to be present
@@ -93,40 +92,24 @@ test "Parse .env basic values and substitution" {
 }
 
 test "Unknown variable without fallback in .env" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const env_text = "VAL=${NOT_DEFINED}";
     _ = env_text;
     //try std.testing.expectError(ConfigError.UnknownVariable, Config.parseEnv(env_text, allocator));
 }
 
 test "Empty placeholder in .env" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const env_text = "X=${}";
     _ = env_text;
     //try std.testing.expectError(ConfigError.InvalidPlaceholder, Config.parseEnv(env_text, allocator));
 }
 
 test "Invalid substitution syntax in .env" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const env_text = "Y=${VAR:-}";
     _ = env_text;
     //try std.testing.expectError(ConfigError.InvalidSubstitutionSyntax, Config.parseEnv(env_text, allocator));
 }
 
 test "Circular reference detection in .env" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const env_text =
         \\A=${B}
         \\B=${A}
@@ -136,10 +119,6 @@ test "Circular reference detection in .env" {
 }
 
 test "Invalid escape sequence in .env" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const env_text =
         \\BAD="foo\\zbar"
     ;
@@ -148,10 +127,6 @@ test "Invalid escape sequence in .env" {
 }
 
 test "Invalid Unicode escape in .env" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
     const env_text =
         \\BAD="\\u123"
     ;

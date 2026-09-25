@@ -22,13 +22,13 @@ const resolveVariables = @import("shared.zig").resolveVariables;
 /// - Comments (`#`) are stripped
 ///
 /// All values are stored in `Config.map` using flattened keys (`a.b.c = v`)
-pub fn parseToml(text: []const u8, allocator: std.mem.Allocator) ConfigError!Config {
+pub fn parseToml(text: []const u8, allocator: std.mem.Allocator, environ: std.process.Environ) ConfigError!Config {
     var config: Config = Config.init(allocator);
     errdefer config.deinit();
 
     var current_prefix: []const u8 = "";
-    var multiline_buf = std.ArrayList(u8).init(allocator);
-    defer multiline_buf.deinit();
+    var multiline_buf = std.ArrayList(u8).empty;
+    defer multiline_buf.deinit(allocator);
 
     var table_arrays = std.StringHashMap(usize).init(allocator);
     defer table_arrays.deinit();
@@ -122,7 +122,7 @@ pub fn parseToml(text: []const u8, allocator: std.mem.Allocator) ConfigError!Con
             const needs_resolve: bool = std.mem.indexOfScalar(u8, parsed, '$') != null;
 
             const resolved: []const u8 = if (needs_resolve)
-                try resolveVariables(parsed, &config, allocator, null, full_key, null)
+                try resolveVariables(parsed, &config, allocator, environ, null, full_key, null)
             else
                 try allocator.dupe(u8, parsed);
             errdefer allocator.free(resolved);
@@ -191,7 +191,7 @@ pub fn parseToml(text: []const u8, allocator: std.mem.Allocator) ConfigError!Con
         const needs_resolve = std.mem.indexOfScalar(u8, parsed, '$') != null;
 
         const resolved = if (needs_resolve)
-            try resolveVariables(parsed, &config, allocator, null, full_key, null)
+            try resolveVariables(parsed, &config, allocator, environ, null, full_key, null)
         else
             try allocator.dupe(u8, parsed);
         errdefer allocator.free(resolved);

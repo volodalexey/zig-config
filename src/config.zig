@@ -1,7 +1,7 @@
 const std = @import("std");
 const utils = @import("utils.zig");
 const accessors = @import("accessors.zig");
-const merge = @import("merge.zig");
+const merges = @import("merge.zig");
 const values = @import("value.zig");
 
 const parser = @import("parser/mod.zig");
@@ -37,15 +37,20 @@ pub const Config = struct {
     pub const parseIni = parse_ini.parseIni;
     pub const parseToml = parse_toml.parseToml;
 
-    pub const writeTomlFile = writers.writeToml;
     pub const writeEnvFile = writers.writeEnv;
     pub const writeIniFile = writers.writeIni;
+    pub const writeTomlFile = writers.writeToml;
 
-    // Attach namespaces
-    pub usingnamespace accessors;
-    pub usingnamespace merge;
-    pub usingnamespace values;
-    pub usingnamespace utils;
+    // pub usingnamespace accessors;
+    pub const get = accessors.get;
+    pub const getString = accessors.getString;
+    pub const getAs = accessors.getAs;
+    pub const keys = accessors.keys;
+    // pub usingnamespace merge;
+    pub const merge = merges.merge;
+    // pub usingnamespace values;
+    pub const Table = values.Table;
+    // pub usingnamespace utils;
 
     /// Creates a new empty config with the given allocator.
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -79,10 +84,10 @@ pub const Config = struct {
 
     /// Loads all current process environment variables into a Config instance.
     /// Keys and values are duplicated using the given allocator.
-    pub fn fromEnvMap(allocator: std.mem.Allocator) !Config {
+    pub fn fromEnvMap(allocator: std.mem.Allocator, environ: std.process.Environ) !Config {
         var config: Config = Config.init(allocator);
         errdefer config.deinit();
-        var env_map = try std.process.getEnvMap(allocator);
+        var env_map = try environ.createMap(allocator);
         defer env_map.deinit();
 
         var it = env_map.iterator();
@@ -138,18 +143,18 @@ pub const Config = struct {
     ///
     /// Lines like `KEY=value` are supported; blank lines and comments are ignored.
     /// Returns a `Config` or an error if file reading or parsing fails.
-    pub fn loadTomlFile(path: []const u8, allocator: std.mem.Allocator) !Config {
-        const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
+    pub fn loadTomlFile(path: []const u8, allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ) !Config {
+        const file = std.Io.Dir.cwd().openFile(io, path, .{ .mode = .read_only }) catch |err| {
             std.log.err("Could not open file: {}", .{err});
             return ConfigError.IoError;
         };
-        defer file.close();
-        const stat = try file.stat();
+        defer file.close(io);
+        const stat = try file.stat(io);
         const content = try allocator.alloc(u8, stat.size);
         defer allocator.free(content);
 
-        _ = try file.readAll(content);
-        const parsed = try parseToml(content, allocator);
+        _ = try file.readPositionalAll(io, content, 0);
+        const parsed = try parseToml(content, allocator, environ);
         return parsed;
     }
 

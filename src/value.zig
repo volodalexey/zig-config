@@ -113,8 +113,8 @@ pub fn valueToType(comptime T: type, val: Value, allocator: std.mem.Allocator) !
         .string => |s| {
             if (T == [][]const u8) {
                 var dummy_lines = std.mem.splitSequence(u8, "", "\n");
-                var dummy_buf = std.ArrayList(u8).init(allocator);
-                defer dummy_buf.deinit();
+                var dummy_buf = std.ArrayList(u8).empty;
+                defer dummy_buf.deinit(allocator);
 
                 const parsed = try parseList(s, &dummy_lines, &dummy_buf, allocator);
                 errdefer {
@@ -207,62 +207,64 @@ fn valueFromString(comptime T: type, s: []const u8) !T {
 
 /// Parses a primitive type (int, bool, float, etc) into a raw string.
 pub fn valueToString(val: Value, allocator: std.mem.Allocator) ![]const u8 {
-    var list_buf = std.ArrayList(u8).init(allocator);
-    errdefer list_buf.deinit();
+    var list_buf = std.ArrayList(u8).empty;
+    errdefer list_buf.deinit(allocator);
+
+    var format_buf: [32]u8 = undefined;
 
     switch (val) {
         .string => |s| return allocator.dupe(u8, s),
 
         .int => |i| {
-            try std.fmt.formatInt(i, 10, .Lower, &list_buf);
-            return list_buf.toOwnedSlice();
+            try list_buf.print(allocator, "{d}", .{i});
+            return list_buf.toOwnedSlice(allocator);
         },
 
         .float => |f| {
-            try std.fmt.formatFloat(f, .{}, &list_buf);
-            return list_buf.toOwnedSlice();
+            try list_buf.print(allocator, "{d}", .{f});
+            return list_buf.toOwnedSlice(allocator);
         },
 
         .bool => |b| {
-            try list_buf.writer().writeAll(if (b) "true" else "false");
-            return list_buf.toOwnedSlice();
+            try list_buf.appendSlice(allocator, if (b) "true" else "false");
+            return list_buf.toOwnedSlice(allocator);
         },
 
         .list => |list| {
             for (list, 0..) |elem, i| {
-                if (i != 0) try list_buf.append(',');
+                if (i != 0) try list_buf.append(allocator, ',');
 
                 const str = try valueToString(elem, allocator);
                 defer allocator.free(str);
 
                 // Quote if it contains comma or space
                 if (std.mem.indexOfAny(u8, str, " ,") != null) {
-                    try list_buf.writer().print("\"{s}\"", .{str});
+                    try list_buf.appendSlice(allocator, try std.fmt.bufPrint(&format_buf, "\"{s}\"", .{str}));
                 } else {
-                    try list_buf.writer().writeAll(str);
+                    try list_buf.appendSlice(allocator, str);
                 }
             }
-            return list_buf.toOwnedSlice();
+            return list_buf.toOwnedSlice(allocator);
         },
 
         .table => |tbl| {
             var is_first = true;
-            try list_buf.append('{');
+            try list_buf.append(allocator, '{');
 
             var it = tbl.iterator();
             while (it.next()) |entry| {
-                if (!is_first) try list_buf.append(',');
+                if (!is_first) try list_buf.append(allocator, ',');
                 is_first = false;
 
                 const k = entry.key_ptr.*;
                 const v_str = try valueToString(entry.value_ptr.*, allocator);
                 defer allocator.free(v_str);
 
-                try list_buf.writer().print("{s}=\"{s}\"", .{ k, v_str });
+                try list_buf.print(allocator, "{s}=\"{s}\"", .{ k, v_str });
             }
 
-            try list_buf.append('}');
-            return list_buf.toOwnedSlice();
+            try list_buf.append(allocator, '}');
+            return list_buf.toOwnedSlice(allocator);
         },
     }
 }

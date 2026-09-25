@@ -5,6 +5,8 @@ const Config = @import("../config.zig").Config;
 const ConfigError = @import("../errors.zig").ConfigError;
 const Value = @import("../value.zig").Value;
 
+const FileBufferSize = 8192;
+
 /// Writes all config entries to a `.toml`-style file.
 ///
 /// - Keys without a section (no dot `.` in the name) are written first.
@@ -30,17 +32,18 @@ const Value = @import("../value.zig").Value;
 /// - The file at `path` is overwritten.
 /// - Values are always written as strings, regardless of original type.
 /// - Section order is determined by key order; keys are not fully alphabetically sorted.
-pub fn writeTomlFile(cfg: *Config, path: []const u8) !void {
-    const file = try std.fs.cwd().createFile(path, .{ .truncate = true });
-    defer file.close();
-    const writer = file.writer();
+pub fn writeTomlFile(cfg: *Config, path: []const u8, allocator: std.mem.Allocator, io: std.Io) !void {
+    const file = try std.Io.Dir.cwd().createFile(io, path, .{ .truncate = true });
+    defer file.close(io);
+    var buf: [FileBufferSize]u8 = undefined;
+    var writer = file.writer(io, &buf);
 
-    var sorted_keys = std.ArrayList([]const u8).init(cfg.map.allocator);
-    defer sorted_keys.deinit();
+    var sorted_keys = std.ArrayList([]const u8).empty;
+    defer sorted_keys.deinit(allocator);
 
     var it = cfg.map.iterator();
     while (it.next()) |entry| {
-        try sorted_keys.append(entry.key_ptr.*);
+        try sorted_keys.append(allocator, entry.key_ptr.*);
     }
 
     // * 1. First write all top-level keys (no section)
@@ -54,9 +57,9 @@ pub fn writeTomlFile(cfg: *Config, path: []const u8) !void {
 
         const val: []const u8 = entry.string;
 
-        try writer.print("{s} = ", .{key});
-        try writeTomlValue(.{ .string = val }, writer, cfg.map.allocator);
-        try writer.writeAll("\n");
+        try writer.interface.print("{s} = ", .{key});
+        try writeTomlValue(.{ .string = val }, &writer.interface, allocator);
+        try writer.interface.writeAll("\n");
     }
 
     // * 2. Then write sectioned keys grouped under [section]
@@ -71,7 +74,7 @@ pub fn writeTomlFile(cfg: *Config, path: []const u8) !void {
         // Print section header if we’ve entered a new section
         if (!std.mem.eql(u8, current_section orelse "", section)) {
             current_section = section;
-            try writer.print("\n[{s}]\n", .{section});
+            try writer.interface.print("\n[{s}]\n", .{section});
         }
 
         const entry = cfg.map.get(key) orelse return ConfigError.Missing;
@@ -79,15 +82,16 @@ pub fn writeTomlFile(cfg: *Config, path: []const u8) !void {
             return ConfigError.InvalidType;
 
         const val: []const u8 = entry.string;
-        try writer.print("{s} = ", .{subkey});
-        try writeTomlValue(.{ .string = val }, writer, cfg.map.allocator);
-        try writer.writeAll("\n");
+        try writer.interface.print("{s} = ", .{subkey});
+        try writeTomlValue(.{ .string = val }, &writer.interface, allocator);
+        try writer.interface.writeAll("\n");
     }
+    try writer.flush();
 }
 
 fn writeTomlValue(
     value: Value,
-    writer: anytype,
+    writer: *std.Io.Writer,
     allocator: std.mem.Allocator,
 ) !void {
     switch (value) {

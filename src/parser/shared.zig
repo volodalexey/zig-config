@@ -52,22 +52,22 @@ pub fn parseString(
 
         // Start collecting multiline content
         if (raw_val.len > 3) {
-            try multiline_buf.appendSlice(raw_val[3..]);
-            try multiline_buf.append('\n');
+            try multiline_buf.appendSlice(allocator, raw_val[3..]);
+            try multiline_buf.append(allocator, '\n');
         }
 
         while (lines.next()) |line| {
             const trimmed: []const u8 = std.mem.trim(u8, line, " \t\r\n");
             if (utils.findUnescaped(trimmed, quote_type)) |end_pos| {
-                try multiline_buf.appendSlice(trimmed[0..end_pos]);
+                try multiline_buf.appendSlice(allocator, trimmed[0..end_pos]);
                 break;
             } else {
-                try multiline_buf.appendSlice(trimmed);
-                try multiline_buf.append('\n');
+                try multiline_buf.appendSlice(allocator, trimmed);
+                try multiline_buf.append(allocator, '\n');
             }
         }
 
-        const joined = try multiline_buf.toOwnedSlice();
+        const joined = try multiline_buf.toOwnedSlice(allocator);
 
         if (is_basic) {
             const result: []const u8 = try utils.unescapeString(joined, allocator);
@@ -120,10 +120,10 @@ pub fn parseList(
 ) ![]Value {
     const list_inner = std.mem.trim(u8, raw[1 .. raw.len - 1], " \t\r\n");
 
-    var items = std.ArrayList(Value).init(allocator);
+    var items = std.ArrayList(Value).empty;
     errdefer {
         for (items.items) |*item| item.deinit(allocator);
-        items.deinit();
+        items.deinit(allocator);
     }
 
     var start: usize = 0;
@@ -143,7 +143,7 @@ pub fn parseList(
             },
             ',' => if (depth == 0) {
                 const slice = std.mem.trim(u8, list_inner[start..i], " \t\r\n");
-                if (slice.len > 0) try items.append(try parseValue(slice, lines, multiline_buf, allocator));
+                if (slice.len > 0) try items.append(allocator, try parseValue(slice, lines, multiline_buf, allocator));
                 start = i + 1;
             },
             else => {},
@@ -153,10 +153,10 @@ pub fn parseList(
 
     if (start < list_inner.len) {
         const slice = std.mem.trim(u8, list_inner[start..], " \t\r\n");
-        if (slice.len > 0) try items.append(try parseValue(slice, lines, multiline_buf, allocator));
+        if (slice.len > 0) try items.append(allocator, try parseValue(slice, lines, multiline_buf, allocator));
     }
 
-    return try items.toOwnedSlice();
+    return try items.toOwnedSlice(allocator);
 }
 
 /// Parses any single TOML value (string, int, float, bool, list, or table).
@@ -236,13 +236,13 @@ pub fn parseTable(
 
     if (raw_val.len == 0 or raw_val[raw_val.len - 1] != '}') {
         multiline_buf.clearRetainingCapacity();
-        try multiline_buf.appendSlice(raw_val);
-        try multiline_buf.append('\n');
+        try multiline_buf.appendSlice(allocator, raw_val);
+        try multiline_buf.append(allocator, '\n');
 
         var depth: usize = 1;
         while (lines.next()) |line| {
-            try multiline_buf.appendSlice(line);
-            try multiline_buf.append('\n');
+            try multiline_buf.appendSlice(allocator, line);
+            try multiline_buf.append(allocator, '\n');
 
             const trimmed = std.mem.trim(u8, line, " \t\r\n");
             if (trimmed.len == 0) continue;
@@ -258,7 +258,7 @@ pub fn parseTable(
             if (depth == 0) break;
         }
 
-        full_table = try multiline_buf.toOwnedSlice();
+        full_table = try multiline_buf.toOwnedSlice(allocator);
         owns_full_table = true;
     }
 
@@ -332,6 +332,7 @@ pub fn resolveVariables(
     value: []const u8,
     cfg: *Config,
     allocator: std.mem.Allocator,
+    environ: std.process.Environ,
     visited_opt: ?*std.StringHashMap(void),
     current_key: ?[]const u8,
     source_raw_values: ?*const std.StringHashMap(Value),
@@ -343,13 +344,13 @@ pub fn resolveVariables(
     };
     defer if (owned_visited_storage) |*map| map.deinit();
 
-    var result = std.ArrayList(u8).init(allocator);
-    defer result.deinit();
+    var result = std.ArrayList(u8).empty;
+    defer result.deinit(allocator);
 
     var i: usize = 0;
     while (i < value.len) {
         if (value[i] == '\\' and i + 1 < value.len and value[i + 1] == '$') {
-            try result.append('$');
+            try result.append(allocator, '$');
             i += 2;
         } else if (value[i] == '$' and i + 1 < value.len and value[i + 1] == '{') {
             // Parse placeholder
@@ -391,7 +392,7 @@ pub fn resolveVariables(
                         return ConfigError.InvalidType;
                     }
                 }
-                const env_val = std.process.getEnvVarOwned(allocator, parsed.var_name) catch null;
+                const env_val = environ.getAlloc(allocator, parsed.var_name) catch null;
                 if (env_val) |e| {
                     const copy: []u8 = try allocator.dupe(u8, e);
                     allocator.free(e);
@@ -405,18 +406,18 @@ pub fn resolveVariables(
                 .none => {
                     if (val_opt) |val_data| {
                         const val: []const u8 = val_data.value;
-                        const rec: []const u8 = try resolveVariables(val, cfg, allocator, visited, parsed.var_name, source_raw_values);
+                        const rec: []const u8 = try resolveVariables(val, cfg, allocator, environ, visited, parsed.var_name, source_raw_values);
                         errdefer allocator.free(rec);
-                        try result.appendSlice(rec);
+                        try result.appendSlice(allocator, rec);
                         allocator.free(rec);
                         if (val_data.owned) allocator.free(val);
                         i = j;
                         continue;
                     }
                     if (parsed.fallback) |fb| {
-                        const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, visited, current_key, source_raw_values);
+                        const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, environ, visited, current_key, source_raw_values);
                         errdefer allocator.free(fb_val);
-                        try result.appendSlice(fb_val);
+                        try result.appendSlice(allocator, fb_val);
                         allocator.free(fb_val);
                         i = j;
                         continue;
@@ -427,9 +428,9 @@ pub fn resolveVariables(
                     if (val_opt) |val_data| {
                         const val: []const u8 = val_data.value;
                         if (val.len > 0) {
-                            const rec: []const u8 = try resolveVariables(val, cfg, allocator, visited, parsed.var_name, source_raw_values);
+                            const rec: []const u8 = try resolveVariables(val, cfg, allocator, environ, visited, parsed.var_name, source_raw_values);
                             errdefer allocator.free(rec);
-                            try result.appendSlice(rec);
+                            try result.appendSlice(allocator, rec);
                             allocator.free(rec);
                             if (val_data.owned) allocator.free(val);
                             i = j;
@@ -438,9 +439,9 @@ pub fn resolveVariables(
                         if (val_data.owned) allocator.free(val);
                     }
                     if (parsed.fallback) |fb| {
-                        const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, visited, current_key, source_raw_values);
+                        const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, environ, visited, current_key, source_raw_values);
                         errdefer allocator.free(fb_val);
-                        try result.appendSlice(fb_val);
+                        try result.appendSlice(allocator, fb_val);
                         allocator.free(fb_val);
                         i = j;
                         continue;
@@ -450,18 +451,18 @@ pub fn resolveVariables(
                 .dash => {
                     if (val_opt) |val_data| {
                         const val: []const u8 = val_data.value;
-                        const rec: []const u8 = try resolveVariables(val, cfg, allocator, visited, parsed.var_name, source_raw_values);
+                        const rec: []const u8 = try resolveVariables(val, cfg, allocator, environ, visited, parsed.var_name, source_raw_values);
                         errdefer allocator.free(rec);
-                        try result.appendSlice(rec);
+                        try result.appendSlice(allocator, rec);
                         allocator.free(rec);
                         if (val_data.owned) allocator.free(val);
                         i = j;
                         continue;
                     }
                     if (parsed.fallback) |fb| {
-                        const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, visited, current_key, source_raw_values);
+                        const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, environ, visited, current_key, source_raw_values);
                         errdefer allocator.free(fb_val);
-                        try result.appendSlice(fb_val);
+                        try result.appendSlice(allocator, fb_val);
                         allocator.free(fb_val);
                         i = j;
                         continue;
@@ -473,9 +474,9 @@ pub fn resolveVariables(
                         const val: []const u8 = val_data.value;
                         if (val.len > 0) {
                             if (parsed.fallback) |fb| {
-                                const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, visited, current_key, source_raw_values);
+                                const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, environ, visited, current_key, source_raw_values);
                                 errdefer allocator.free(fb_val);
-                                try result.appendSlice(fb_val);
+                                try result.appendSlice(allocator, fb_val);
                                 allocator.free(fb_val);
                                 if (val_data.owned) allocator.free(val);
                                 i = j;
@@ -490,9 +491,9 @@ pub fn resolveVariables(
                 .plus => {
                     if (val_opt) |val_data| {
                         if (parsed.fallback) |fb| {
-                            const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, visited, current_key, source_raw_values);
+                            const fb_val: []const u8 = try resolveVariables(fb, cfg, allocator, environ, visited, current_key, source_raw_values);
                             errdefer allocator.free(fb_val);
-                            try result.appendSlice(fb_val);
+                            try result.appendSlice(allocator, fb_val);
                             allocator.free(fb_val);
                             if (val_data.owned) allocator.free(val_data.value);
                             i = j;
@@ -505,12 +506,12 @@ pub fn resolveVariables(
                 },
             }
         } else {
-            try result.append(value[i]);
+            try result.append(allocator, value[i]);
             i += 1;
         }
     }
 
-    const out = try result.toOwnedSlice();
+    const out = try result.toOwnedSlice(allocator);
     return out;
 }
 

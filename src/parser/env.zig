@@ -24,7 +24,7 @@ const Value = @import("../value.zig").Value;
 /// Returns:
 /// - `Config` with all keys and resolved values (caller must call `deinit`)
 /// - Fails with `ConfigError` on invalid lines or unresolved references
-pub fn parseEnv(text: []const u8, allocator: std.mem.Allocator) !Config {
+pub fn parseEnv(text: []const u8, allocator: std.mem.Allocator, environ: std.process.Environ) !Config {
     var config: Config = Config.init(allocator);
     errdefer config.deinit();
 
@@ -38,8 +38,8 @@ pub fn parseEnv(text: []const u8, allocator: std.mem.Allocator) !Config {
         raw_values.deinit();
     }
 
-    var dummy_buf = std.ArrayList(u8).init(allocator);
-    defer dummy_buf.deinit();
+    var dummy_buf = std.ArrayList(u8).empty;
+    defer dummy_buf.deinit(allocator);
 
     var lines = std.mem.splitSequence(u8, text, "\n");
     while (lines.next()) |line| {
@@ -69,6 +69,7 @@ pub fn parseEnv(text: []const u8, allocator: std.mem.Allocator) !Config {
             entry.value_ptr.string,
             &config,
             allocator,
+            environ,
             null,
             entry.key_ptr.*,
             &raw_values,

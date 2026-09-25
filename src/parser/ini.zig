@@ -30,7 +30,7 @@ const Value = @import("../value.zig").Value;
 ///
 /// Returns:
 /// - `Config` with fully parsed key-value pairs (caller owns and must call `deinit`)
-pub fn parseIni(text: []const u8, allocator: std.mem.Allocator) !Config {
+pub fn parseIni(text: []const u8, allocator: std.mem.Allocator, environ: std.process.Environ) !Config {
     var config: Config = Config.init(allocator);
     errdefer config.deinit();
 
@@ -66,8 +66,8 @@ pub fn parseIni(text: []const u8, allocator: std.mem.Allocator) !Config {
         defer allocator.free(full_key);
 
         var dummy_lines = std.mem.splitSequence(u8, "", "\n");
-        var dummy_buf = std.ArrayList(u8).init(allocator);
-        defer dummy_buf.deinit();
+        var dummy_buf = std.ArrayList(u8).empty;
+        defer dummy_buf.deinit(allocator);
 
         // Parse strings
         const parsed = try parseString(kv.value, &dummy_lines, &dummy_buf, allocator);
@@ -76,7 +76,7 @@ pub fn parseIni(text: []const u8, allocator: std.mem.Allocator) !Config {
         const needs_resolve = std.mem.indexOfScalar(u8, parsed, '$') != null;
 
         const resolved = if (needs_resolve)
-            try resolveVariables(parsed, &config, allocator, null, full_key, null)
+            try resolveVariables(parsed, &config, allocator, environ, null, full_key, null)
         else
             try allocator.dupe(u8, parsed);
         errdefer allocator.free(resolved);
