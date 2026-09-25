@@ -119,12 +119,17 @@ test "Round-trip TOML parse -> write -> parse" {
     defer allocator.free(foo_string);
 
     try std.testing.expectEqualStrings("bar", foo_string);
-    //try std.testing.expectEqualStrings("123", try cfg2.getString("number_str", allocator));
-    //allocator.free(try cfg2.getString("number_str", allocator));
-    //try std.testing.expectEqualStrings("value", try cfg2.getString("section.key", allocator));
-    //allocator.free(try cfg2.getString("section.key", allocator));
-    //try std.testing.expectEqualStrings("x", try cfg2.getString("section.another", allocator));
-    //allocator.free(try cfg2.getString("section.another", allocator));
+
+    const numberEntry = try cfg2.getAs([]const u8, "number_str", allocator);
+    defer numberEntry.deinit();
+    try std.testing.expectEqualStrings("123", numberEntry.value);
+    const sectionValue = try cfg2.getString("section.key", allocator);
+    defer allocator.free(sectionValue);
+    try std.testing.expectEqualStrings("value", sectionValue);
+
+    const sectionAnotherValue = try cfg2.getString("section.another", allocator);
+    defer allocator.free(sectionAnotherValue);
+    try std.testing.expectEqualStrings("x", sectionAnotherValue);
 }
 
 test "TOML writer returns InvalidType for non-string values" {

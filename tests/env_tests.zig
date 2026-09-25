@@ -133,3 +133,45 @@ test "Invalid Unicode escape in .env" {
     _ = env_text;
     //try std.testing.expectError(ConfigError.InvalidUnicodeEscape, Config.parseEnv(env_text, allocator));
 }
+
+test "Round-trip ENV parse -> write -> parse" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    const environ = std.testing.environ;
+
+    // Create a config with string values only
+    var cfg = Config.init(allocator);
+    defer cfg.deinit();
+    try cfg.set("foo", "bar");
+    try cfg.set("number_str", "123"); // numeric as string
+    try cfg.set("section.key", "value");
+    try cfg.set("section.another", "x");
+
+    // Write to a ENV file
+    const out_path = "test_output.env";
+    defer std.Io.Dir.cwd().deleteFile(io, out_path) catch |err| {
+        std.debug.print("failed to delete file: {}\n", .{err});
+    }; // clean up file (ignore error if not exist)
+
+    try cfg.writeEnvFile(out_path, allocator, io);
+
+    // Read it back
+    var cfg2 = try Config.loadEnvFile(out_path, allocator, io, environ);
+    defer cfg2.deinit();
+
+    const foo_string = try cfg2.getString("foo", allocator);
+    defer allocator.free(foo_string);
+
+    try std.testing.expectEqualStrings("bar", foo_string);
+
+    const numberEntry = try cfg2.getAs([]const u8, "number_str", allocator);
+    defer numberEntry.deinit();
+    try std.testing.expectEqualStrings("123", numberEntry.value);
+    const sectionValue = try cfg2.getString("section.key", allocator);
+    defer allocator.free(sectionValue);
+    try std.testing.expectEqualStrings("value", sectionValue);
+
+    const sectionAnotherValue = try cfg2.getString("section.another", allocator);
+    defer allocator.free(sectionAnotherValue);
+    try std.testing.expectEqualStrings("x", sectionAnotherValue);
+}

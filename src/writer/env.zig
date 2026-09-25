@@ -17,16 +17,17 @@ const FileBufferSize = 8192;
 ///   - `string` → written as-is, without escaping or quotes
 ///
 /// Overwrites the file at the given `path`.
-pub fn writeEnvFile(self: *Config, path: []const u8) !void {
-    const file = try std.fs.cwd().createFile(path, .{ .truncate = true }) catch return ConfigError.IoError;
-    defer file.close();
-
-    var writer = file.writer();
+pub fn writeEnvFile(self: *Config, path: []const u8, allocator: std.mem.Allocator, io: std.Io) !void {
+    const file = std.Io.Dir.cwd().createFile(io, path, .{ .truncate = true }) catch return ConfigError.IoError;
+    defer file.close(io);
+    var buf: [FileBufferSize]u8 = undefined;
+    var writer = file.writer(io, &buf);
 
     var it = self.map.iterator();
     while (it.next()) |entry| {
         const val_str = try valueToString(entry.value_ptr.*, self.map.allocator);
-        defer self.map.allocator.free(val_str);
-        try writer.print("{s}={s}\n", .{ entry.key_ptr.*, val_str });
+        defer allocator.free(val_str);
+        try writer.interface.print("{s}={s}\n", .{ entry.key_ptr.*, val_str });
     }
+    try writer.flush();
 }

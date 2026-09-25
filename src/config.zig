@@ -120,18 +120,18 @@ pub const Config = struct {
     ///
     /// Lines like `KEY=value` are supported; blank lines and comments are ignored.
     /// Returns a `Config` or an error if file reading or parsing fails.
-    pub fn loadEnvFile(path: []const u8, allocator: std.mem.Allocator) !Config {
-        const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
+    pub fn loadEnvFile(path: []const u8, allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ) !Config {
+        const file = std.Io.Dir.cwd().openFile(io, path, .{ .mode = .read_only }) catch |err| {
             std.log.err("Could not open file: {}", .{err});
             return ConfigError.IoError;
         };
-        defer file.close();
-        const stat = try file.stat();
+        defer file.close(io);
+        const stat = try file.stat(io);
         const content = try allocator.alloc(u8, stat.size);
         defer allocator.free(content);
 
-        _ = try file.readAll(content);
-        return try parseEnv(content, allocator);
+        _ = try file.readPositionalAll(io, content, 0);
+        return try parseEnv(content, allocator, environ);
     }
 
     /// Loads a file from disk and parses it as `.ini` format.
