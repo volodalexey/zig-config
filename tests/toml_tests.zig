@@ -91,7 +91,6 @@ test "Parse .toml with sections, arrays, and substitutions" {
 }
 
 test "Round-trip TOML parse -> write -> parse" {
-    std.testing.log_level = .debug;
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     const environ = std.testing.environ;

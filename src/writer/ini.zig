@@ -43,6 +43,9 @@ pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocato
     defer {
         var it = by_section.iterator();
         while (it.next()) |entry| {
+            for (entry.value_ptr.*.items) |pair| {
+                allocator.free(pair.value);
+            }
             entry.value_ptr.*.deinit(allocator);
         }
         by_section.deinit();
@@ -53,8 +56,8 @@ pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocato
         const full_key: []const u8 = entry.key_ptr.*;
 
         // Convert value to string (copied per entry, freed after each iteration)
-        const val_str = try valueToString(entry.value_ptr.*, self.map.allocator);
-        defer self.map.allocator.free(val_str);
+        const val_str = try valueToString(entry.value_ptr.*, allocator);
+        defer allocator.free(val_str);
 
         // Split section and subkey at the first `.` (e.g., `server.port`)
         const dot: usize = std.mem.indexOfScalar(u8, full_key, '.') orelse {
@@ -66,9 +69,12 @@ pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocato
         const section: []const u8 = full_key[0..dot];
         const key: []const u8 = full_key[dot + 1 ..];
 
+        const owned_value = try allocator.dupe(u8, val_str);
+        errdefer allocator.free(owned_value);
+
         const entry_val = IniEntry{
             .key = key,
-            .value = val_str,
+            .value = owned_value,
         };
 
         // Append entry under its corresponding section
@@ -94,4 +100,5 @@ pub fn writeIniFile(self: *Config, path: []const u8, allocator: std.mem.Allocato
             writer.interface.print("{s} = {s}\n", .{ pair.key, pair.value }) catch return ConfigError.IoError;
         }
     }
+    try writer.flush();
 }
